@@ -1,0 +1,30 @@
+[project]
+name = "clinical-agent-harness"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Satish Kuncha", email = "satishreddyk@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "google-genai>=2.22.0",
+    "langgraph==1.2.11",
+    "langgraph-checkpoint-sqlite==3.1.1",
+    "pydantic==2.13.5",
+    "pydantic-ai==2.39.0",
+    "pydantic-ai-slim[groq]==2.39.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[project.scripts]
+clinical-agent-harness = "clinical_agent_harness:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_test_loop_scope = "module"
