@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from clinical_agent_harness.harness.graph import build_prescription_graph
 from clinical_agent_harness.domain.prescription import ClinicalPrescription
 from clinical_agent_harness.guardrails.models import GuardrailDecision
-
+from clinical_agent_harness.harness.errors import RetryableError
 
 @pytest.mark.asyncio
 async def test_prescription_graph_compiles_and_runs():
@@ -112,7 +112,7 @@ async def test_prescription_node_retries_transient_failure(
         attempts += 1
 
         if attempts < 3:
-            raise RuntimeError("Temporary provider failure")
+            raise RetryableError("Temporary provider failure")
 
         return FakeResult()
 
@@ -146,7 +146,7 @@ async def test_prescription_failure_after_retries_stops_workflow(
     async def fake_run(*args, **kwargs):
         nonlocal attempts
         attempts += 1
-        raise RuntimeError("Provider permanently unavailable")
+        raise RetryableError("Provider permanently unavailable")
 
     monkeypatch.setattr(
         graph_module.prescription_agent,
@@ -181,7 +181,7 @@ async def test_guardrail_failure_fails_closed(
     async def fake_guardrail(*args, **kwargs):
         nonlocal guardrail_attempts
         guardrail_attempts += 1
-        raise RuntimeError("Guardrail provider unavailable")
+        raise RetryableError("Guardrail provider unavailable")
 
     async def fake_prescription(*args, **kwargs):
         nonlocal prescription_called

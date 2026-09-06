@@ -12,8 +12,6 @@ from clinical_agent_harness.harness.state import (
     WorkflowStatus,
 )
 from langgraph.types import interrupt
-from clinical_agent_harness.harness.errors import GuardrailUnavailableError
-
 
 #nodes
 async def guardrail_node(

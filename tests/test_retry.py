@@ -12,7 +12,7 @@ async def test_retry_succeeds_after_transient_failures():
         attempts += 1
 
         if attempts < 3:
-            raise RuntimeError("Temporary failure")
+            raise RetryableError("Temporary failure")
 
         return "success"
 
@@ -21,9 +21,41 @@ async def test_retry_succeeds_after_transient_failures():
     assert result == "success"
     assert attempts == 3
 
+@pytest.mark.asyncio
+async def test_non_retryable_error_fails_immediately():
+    attempts = 0
+
+    async def operation():
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("Permanent failure")
+
+    with pytest.raises(RuntimeError, match="Permanent failure"):
+        await run_with_retry(operation)
+
+    assert attempts == 1
 
 @pytest.mark.asyncio
-async def test_retry_stops_after_three_attempts():
+async def test_timeout_is_retryable():
+    attempts = 0
+
+    async def operation():
+        nonlocal attempts
+        attempts += 1
+        raise TimeoutError("Provider timed out")
+
+    with pytest.raises(TimeoutError, match="Provider timed out"):
+        await run_with_retry(
+            operation,
+            max_attempts=3,
+            delay_seconds=0,
+        )
+
+    assert attempts == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_stops_after_one_attempt():
     attempts = 0
 
     async def operation():
@@ -34,7 +66,7 @@ async def test_retry_stops_after_three_attempts():
     with pytest.raises(RuntimeError, match="Persistent failure"):
         await run_with_retry(operation)
 
-    assert attempts == 3
+    assert attempts == 1
 
 import asyncio
 

@@ -7,6 +7,11 @@ from clinical_agent_harness.harness.errors import RetryableError
 T = TypeVar("T")
 
 
+def is_retryable_error(exc: Exception) -> bool:
+    """Return True only for failures considered transient."""
+    return isinstance(exc, (TimeoutError, RetryableError))
+
+
 async def run_with_retry(
     operation: Callable[[], Awaitable[T]],
     max_attempts: int = 3,
@@ -22,16 +27,15 @@ async def run_with_retry(
                 timeout=timeout_seconds,
             )
 
-        except asyncio.TimeoutError as exc:
+        except Exception as exc:
             last_error = exc
 
-        except RetryableError as exc:
-            last_error = exc
+            if not is_retryable_error(exc):
+                raise
 
-        except Exception:
-            raise
+            if attempt == max_attempts - 1:
+                break
 
-        if attempt < max_attempts - 1:
             await asyncio.sleep(delay_seconds)
 
     if last_error is not None:
