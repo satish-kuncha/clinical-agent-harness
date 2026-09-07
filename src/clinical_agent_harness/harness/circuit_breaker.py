@@ -1,7 +1,7 @@
-import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from enum import Enum
-from typing import Awaitable, Callable, TypeVar
+from typing import TypeVar
 
 from clinical_agent_harness.harness.errors import (
     CircuitOpenError,
@@ -58,7 +58,7 @@ class CircuitBreaker:
         try:
             result = await operation()
 
-        except RetryableError:
+        except (RetryableError, TimeoutError):
             self._failure_count += 1
             self._last_failure_time = time.monotonic()
 

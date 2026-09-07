@@ -5,5 +5,5 @@ class RetryableError(Exception):
 class NonRetryableError(Exception):
     """An error that should fail immediately without retrying."""
 
-class CircuitOpenError(Exception):
+class CircuitOpenError(NonRetryableError):
     """Raised when the circuit breaker prevents an operation from running."""

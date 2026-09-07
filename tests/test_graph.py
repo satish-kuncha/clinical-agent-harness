@@ -5,6 +5,8 @@ from clinical_agent_harness.harness.graph import build_prescription_graph
 from clinical_agent_harness.domain.prescription import ClinicalPrescription
 from clinical_agent_harness.guardrails.models import GuardrailDecision
 from clinical_agent_harness.harness.errors import RetryableError
+from clinical_agent_harness.harness.circuit_breaker import CircuitBreaker
+from clinical_agent_harness.harness.state import WorkflowStatus
 
 @pytest.mark.asyncio
 async def test_prescription_graph_compiles_and_runs():
@@ -360,3 +362,100 @@ async def test_approval_rejected_workflow(
     )
 
     assert result["status"] == WorkflowStatus.BLOCKED
+
+
+@pytest.mark.asyncio
+async def test_graph_circuit_breaker_opens_after_guardrail_failure(
+    monkeypatch,
+):
+    from clinical_agent_harness.harness import graph as graph_module
+
+    guardrail_attempts = 0
+
+    async def fake_guardrail(*args, **kwargs):
+        nonlocal guardrail_attempts
+        guardrail_attempts += 1
+        raise RetryableError("Guardrail provider unavailable")
+
+    monkeypatch.setattr(
+        graph_module,
+        "check_semantic_safety",
+        fake_guardrail,
+    )
+
+    breaker = CircuitBreaker(
+        failure_threshold=1,
+        recovery_timeout_seconds=30.0,
+    )
+
+    graph = graph_module.build_prescription_graph(
+        llm_circuit_breaker=breaker,
+    )
+
+    result = await graph.ainvoke(
+        {
+            "input_text": "Patient PAT-12345 needs a prescription.",
+        }
+    )
+
+    assert result["status"] == WorkflowStatus.FAILED
+
+    # Retry layer should have attempted the provider 3 times.
+    assert guardrail_attempts == 3
+
+    # The failed operation should have opened the circuit.
+    assert breaker.state.value == "open"
+
+
+@pytest.mark.asyncio
+async def test_graph_open_circuit_fails_fast(
+    monkeypatch,
+):
+    from clinical_agent_harness.harness import graph as graph_module
+
+    guardrail_attempts = 0
+
+    async def fake_guardrail(*args, **kwargs):
+        nonlocal guardrail_attempts
+        guardrail_attempts += 1
+        raise RetryableError("Guardrail provider unavailable")
+
+    monkeypatch.setattr(
+        graph_module,
+        "check_semantic_safety",
+        fake_guardrail,
+    )
+
+    breaker = CircuitBreaker(
+        failure_threshold=1,
+        recovery_timeout_seconds=30.0,
+    )
+
+    graph = graph_module.build_prescription_graph(
+        llm_circuit_breaker=breaker,
+    )
+
+    # First invocation:
+    # Retry 3 times → failure → circuit opens.
+    first_result = await graph.ainvoke(
+        {
+            "input_text": "Patient PAT-12345 needs a prescription.",
+        }
+    )
+
+    assert first_result["status"] == WorkflowStatus.FAILED
+    assert breaker.state.value == "open"
+    assert guardrail_attempts == 3
+
+    # Second invocation:
+    # Circuit is already OPEN, so the provider must NOT be called.
+    second_result = await graph.ainvoke(
+        {
+            "input_text": "Patient PAT-67890 needs a prescription.",
+        }
+    )
+
+    assert second_result["status"] == WorkflowStatus.FAILED
+
+    # Still 3 — no additional provider attempt.
+    assert guardrail_attempts == 3

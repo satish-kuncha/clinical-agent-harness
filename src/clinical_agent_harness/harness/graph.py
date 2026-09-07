@@ -12,66 +12,96 @@ from clinical_agent_harness.harness.state import (
     WorkflowStatus,
 )
 from langgraph.types import interrupt
+from clinical_agent_harness.harness.circuit_breaker import CircuitBreaker
 
 #nodes
-async def guardrail_node(
-    state: PrescriptionWorkflowState,
-) -> dict:
-    async def operation():
-        return await check_semantic_safety(
-            state["input_text"]
-        )
+def make_guardrail_node(
+    circuit_breaker: CircuitBreaker,
+):
+    async def guardrail_node(
+        state: PrescriptionWorkflowState,
+    ) -> dict:
 
-    try:
-        decision = await run_with_retry(
-            operation,
-            max_attempts=3,
-            timeout_seconds=10.0,
-        )
-    except Exception as exc:
-        return {
-            "status": WorkflowStatus.FAILED,
-            "reason": "Safety guardrail unavailable after 3 attempts.",
-        }
+        async def operation():
+            return await check_semantic_safety(
+                state["input_text"]
+            )
 
-    if not decision.allowed:
-        return {
-            "status": WorkflowStatus.BLOCKED,
-            "reason": decision.reason,
-        }
+        try:
+            decision = await circuit_breaker.call(
+                lambda: run_with_retry(
+                    operation,
+                    max_attempts=3,
+                    timeout_seconds=10.0,
+                )
+            )
+        except Exception as exc:
+            print(
+                f"\nGUARDRAIL NODE ERROR: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
-    return {
-        "status": WorkflowStatus.RUNNING,
-        "reason": None,
-    }
-
-
-async def prescription_node(
-    state: PrescriptionWorkflowState,
-) -> dict:
-    async def operation():
-        return await prescription_agent.run(
-            state["input_text"]
-        )
-
-    try:
-        result = await run_with_retry(
-            operation,
-            max_attempts=3,
-            timeout_seconds=10.0,
-        )
-    except Exception as exc:
-        print(f"\nPRESCRIPTION NODE ERROR: {type(exc).__name__}: {exc}")
-        return {
+            return {
                 "status": WorkflowStatus.FAILED,
-                "reason": "Prescription agent unavailable after 3 attempts.",
+                "reason": (
+                    "Safety guardrail unavailable after 3 attempts."
+                ),
             }
 
-    return {
-        "status": WorkflowStatus.RUNNING,
-        "reason": None,
-        "prescription": result.output,
-    }
+        if not decision.allowed:
+            return {
+                "status": WorkflowStatus.BLOCKED,
+                "reason": decision.reason,
+            }
+
+        return {
+            "status": WorkflowStatus.RUNNING,
+            "reason": None,
+        }
+
+    return guardrail_node
+
+
+def make_prescription_node(
+    circuit_breaker: CircuitBreaker,
+):
+    async def prescription_node(
+        state: PrescriptionWorkflowState,
+    ) -> dict:
+
+        async def operation():
+            return await prescription_agent.run(
+                state["input_text"]
+            )
+
+        try:
+            result = await circuit_breaker.call(
+                lambda: run_with_retry(
+                    operation,
+                    max_attempts=3,
+                    timeout_seconds=10.0,
+                )
+            )
+        except Exception as exc:
+            print(
+                f"\nPRESCRIPTION NODE ERROR: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+            return {
+                "status": WorkflowStatus.FAILED,
+                "reason": (
+                     "Prescription agent unavailable after 3 attempts."
+                ),
+            }
+
+        return {
+            "status": WorkflowStatus.RUNNING,
+            "reason": None,
+            "prescription": result.output,
+        }
+
+    return prescription_node
 
 
 async def patient_lookup_node(
@@ -222,11 +252,22 @@ def route_after_approval(
 
 
 #putting the graph together
-def build_prescription_graph(checkpointer=None,):
+def build_prescription_graph(
+    checkpointer=None,
+    llm_circuit_breaker: CircuitBreaker | None = None,
+):
+    circuit_breaker = (
+        llm_circuit_breaker
+        if llm_circuit_breaker is not None
+        else CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout_seconds=30.0,
+        )
+    )
     graph = StateGraph(PrescriptionWorkflowState)
 
-    graph.add_node("guardrail", guardrail_node)
-    graph.add_node("prescription", prescription_node)
+    graph.add_node("guardrail", make_guardrail_node(circuit_breaker),)
+    graph.add_node("prescription",  make_prescription_node(circuit_breaker),)
     graph.add_node("patient_lookup", patient_lookup_node)
     graph.add_node("policy", policy_node)
     graph.add_node("approval", approval_node)
