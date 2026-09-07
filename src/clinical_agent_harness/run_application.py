@@ -6,6 +6,7 @@ from clinical_agent_harness.application.bootstrap import (
 from clinical_agent_harness.application.service import (
     PrescriptionVerificationService,
 )
+from clinical_agent_harness.observability.langfuse import langfuse
 
 
 async def main() -> None:
@@ -26,4 +27,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        langfuse.shutdown()
