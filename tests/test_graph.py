@@ -8,6 +8,13 @@ from clinical_agent_harness.harness.errors import RetryableError
 from clinical_agent_harness.harness.circuit_breaker import CircuitBreaker
 from clinical_agent_harness.harness.state import WorkflowStatus
 
+#from clinical_agent_harness.application.bootstrap import (
+#    initialize_application,
+#)
+
+#initialize_application()
+
+
 @pytest.mark.asyncio
 async def test_prescription_graph_compiles_and_runs():
     graph = build_prescription_graph()

@@ -4,6 +4,7 @@ from clinical_agent_harness.domain.prescription import ClinicalPrescription
 
 load_dotenv()
 
+
 prescription_agent = Agent(
     "groq:openai/gpt-oss-20b",
     output_type=ClinicalPrescription,
