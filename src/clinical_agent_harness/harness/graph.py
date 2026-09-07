@@ -235,6 +235,17 @@ def route_after_prescription(
 
     return "success"
 
+def route_after_patient_lookup(
+    state: PrescriptionWorkflowState,
+) -> str:
+    if state["status"] in {
+        WorkflowStatus.BLOCKED,
+        WorkflowStatus.FAILED,
+    }:
+        return END
+
+    return "policy"
+
 def route_after_approval(
     state: PrescriptionWorkflowState,
 ) -> str:
@@ -293,7 +304,10 @@ def build_prescription_graph(
         },
     )
 
-    graph.add_edge("patient_lookup", "policy")
+    graph.add_conditional_edges(
+        "patient_lookup",
+        route_after_patient_lookup,
+    )
 
     graph.add_conditional_edges(
         "policy",

@@ -56,3 +56,5 @@ async def test_workflow_resumes_after_interrupt(tmp_path):
 
     assert final_state["status"] == WorkflowStatus.COMPLETED
     assert final_state["approval"] == ApprovalDecision.APPROVED
+
+    await checkpointer_2.conn.close()
